@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+@theme {
+  --color-blue-950: #061024;
+  --color-blue-900: #0a1a3a;
+  --color-blue-850: #0d2148;
+  --color-blue-800: #102a5c;
+  --color-blue-700: #163872;
+  --color-blue-600: #1e4a93;
+  --color-line: #cfe0ff;
+  --color-linefaint: rgba(207, 224, 255, 0.16);
+  --color-amber: #e0a52c;
+  --color-amber-bright: #ffc247;
+  --color-amber-dim: #a97a1f;
+  --color-ok: #4ade80;
+  --color-danger: #ff6b5e;
+
+  --font-mono-tech: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-sans-tech: "Space Grotesk", "Inter", ui-sans-serif, sans-serif;
+
+  --animate-draw-line: draw-line 1.1s ease forwards;
+  --animate-blink: blink 1.4s step-end infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-scan: scan 3.5s linear infinite;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-linefaint);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-blue-950);
+    color: var(--color-line);
+    font-family: var(--font-sans-tech);
+    background-image:
+      linear-gradient(var(--color-linefaint) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-linefaint) 1px, transparent 1px),
+      linear-gradient(rgba(207, 224, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(207, 224, 255, 0.06) 1px, transparent 1px);
+    background-size: 88px 88px, 88px 88px, 22px 22px, 22px 22px;
+    background-position: -1px -1px;
+  }
+
+  ::selection {
+    background: var(--color-amber);
+    color: var(--color-blue-950);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-blue-900);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-blue-700);
+    border: 2px solid var(--color-blue-900);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-amber-dim);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-amber);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .font-mono-tech {
+    font-family: var(--font-mono-tech);
+  }
+  .font-sans-tech {
+    font-family: var(--font-sans-tech);
+  }
+
+  .tech-label {
+    font-family: var(--font-mono-tech);
+    letter-spacing: 0.14em;
+    font-size: 0.7rem;
+    color: var(--color-amber);
+  }
+
+  .blueprint-card {
+    position: relative;
+    background: linear-gradient(180deg, rgba(16, 42, 92, 0.55), rgba(10, 26, 58, 0.55));
+    border: 1px solid var(--color-linefaint);
+    backdrop-filter: blur(2px);
+  }
+
+  .blueprint-card::before {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border: 1px dashed rgba(207, 224, 255, 0.14);
+    pointer-events: none;
+  }
+
+  .corner-ticks {
+    position: relative;
+  }
+  .corner-ticks::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--color-amber), var(--color-amber)),
+      linear-gradient(var(--color-amber), var(--color-amber)),
+      linear-gradient(var(--color-amber), var(--color-amber)),
+      linear-gradient(var(--color-amber), var(--color-amber));
+    background-size: 14px 2px, 2px 14px, 14px 2px, 2px 14px;
+    background-position: top left, top left, bottom right, bottom right;
+    background-repeat: no-repeat;
+    opacity: 0.9;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: var(--color-amber);
+    color: var(--color-blue-950);
+    font-weight: 600;
+    padding: 0.7rem 1.4rem;
+    border: 1px solid var(--color-amber-bright);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    box-shadow: 0 0 0 0 rgba(224, 165, 44, 0.5);
+  }
+  .btn-primary:hover {
+    background: var(--color-amber-bright);
+    box-shadow: 0 0 22px 0 rgba(224, 165, 44, 0.45);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: transparent;
+    color: var(--color-line);
+    font-weight: 500;
+    padding: 0.7rem 1.4rem;
+    border: 1px solid var(--color-linefaint);
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  .btn-secondary:hover {
+    border-color: var(--color-amber);
+    color: var(--color-amber-bright);
+    background: rgba(224, 165, 44, 0.06);
+  }
+
+  .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: transparent;
+    color: var(--color-danger);
+    font-weight: 500;
+    padding: 0.7rem 1.4rem;
+    border: 1px solid rgba(255, 107, 94, 0.4);
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn-danger:hover {
+    background: rgba(255, 107, 94, 0.1);
+    box-shadow: 0 0 16px 0 rgba(255, 107, 94, 0.25);
+  }
+
+  .field-input {
+    width: 100%;
+    background: rgba(6, 16, 36, 0.6);
+    border: 1px solid var(--color-linefaint);
+    color: var(--color-line);
+    padding: 0.7rem 0.9rem;
+    font-family: var(--font-mono-tech);
+    font-size: 0.9rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .field-input::placeholder {
+    color: #5c6b85;
+  }
+  .field-input:focus {
+    border-color: var(--color-amber);
+    box-shadow: 0 0 0 3px rgba(224, 165, 44, 0.15);
+    outline: none;
+  }
+  .field-input.field-error {
+    border-color: var(--color-danger);
+  }
+
+  .grid-fade-mask {
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 40%, transparent 100%);
+  }
+}
+
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: 1000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
