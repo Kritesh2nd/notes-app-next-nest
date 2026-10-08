@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     tools {
-        nodejs 'Node-22'
+        nodejs 'Node-24'
     }
 
     parameters {
