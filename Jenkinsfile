@@ -47,11 +47,6 @@ pipeline {
         DOCKER_CREDENTIALS_ID = 'docker_credentials'
         DEPLOY_SSH_CREDENTIALS_ID = 'deploye_server_credentials'
         DEPLOY_DIR = '/opt/noteapp'
-
-        ALWAYS_BUILD = "${params.ALWAYS_BUILD}"
-
-        FRONTEND_IMAGE_TAG = "${params.DOCKER_IMAGE_NAME_FRONTEND}:${env.BUILD_NUMBER}"
-        BACKEND_IMAGE_TAG = "${params.DOCKER_IMAGE_NAME_BACKEND}:${env.BUILD_NUMBER}"
     }
 
     options {
@@ -64,7 +59,6 @@ pipeline {
         )
 
         skipDefaultCheckout(true)
-
         disableConcurrentBuilds()
     }
 
@@ -76,11 +70,49 @@ pipeline {
             }
         }
 
+        stage('Initialize') {
+            steps {
+                script {
+                    /*
+                    * Jenkins provides BUILD_NUMBER automatically.
+                    * Use it as the primary Docker tag.
+                    */
+                    env.FRONTEND_IMAGE_TAG =
+                        "${params.DOCKER_IMAGE_NAME_FRONTEND}:${env.BUILD_NUMBER}"
+
+                    env.BACKEND_IMAGE_TAG =
+                        "${params.DOCKER_IMAGE_NAME_BACKEND}:${env.BUILD_NUMBER}"
+
+                    /*
+                    * Capture the commit safely.
+                    */
+                    env.COMMIT_TAG = sh(
+                        script: 'git rev-parse --short=12 HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    env.FRONTEND_COMMIT_IMAGE =
+                        "${params.DOCKER_IMAGE_NAME_FRONTEND}:${env.COMMIT_TAG}"
+
+                    env.BACKEND_COMMIT_IMAGE =
+                        "${params.DOCKER_IMAGE_NAME_BACKEND}:${env.COMMIT_TAG}"
+
+                    echo "Build number: ${env.BUILD_NUMBER}"
+                    echo "Commit: ${env.COMMIT_TAG}"
+                    echo "Frontend image: ${env.FRONTEND_IMAGE_TAG}"
+                    echo "Backend image: ${env.BACKEND_IMAGE_TAG}"
+                    echo "Always build: ${params.ALWAYS_BUILD}"
+                }
+            }
+        }
+
         stage('Detect Changes') {
             steps {
                 script {
                     def changes = sh(
                         script: '''
+                            set -e
+
                             if git rev-parse HEAD~1 >/dev/null 2>&1; then
                                 git diff --name-only HEAD~1 HEAD
                             else
@@ -90,19 +122,27 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    def changedFiles = changes ? changes.split('\\n') : []
+                    def changedFiles = changes
+                        ? changes.split('\\n')
+                        : []
 
-                    env.FRONTEND_CHANGED = changedFiles.any {
-                        it.startsWith('frontend/')
-                    } ? 'true' : 'false'
+                    env.FRONTEND_CHANGED =
+                        changedFiles.any {
+                            it.startsWith('frontend/')
+                        } ? 'true' : 'false'
 
-                    env.BACKEND_CHANGED = changedFiles.any {
-                        it.startsWith('backend/')
-                    } ? 'true' : 'false'
+                    env.BACKEND_CHANGED =
+                        changedFiles.any {
+                            it.startsWith('backend/')
+                        } ? 'true' : 'false'
 
-                    env.DEPLOY_CONFIG_CHANGED = changedFiles.any {
-                        it == 'docker-compose.yml'
-                    } ? 'true' : 'false'
+                    env.DEPLOY_CONFIG_CHANGED =
+                        changedFiles.any {
+                            it == 'docker-compose.yml'
+                        } ? 'true' : 'false'
+
+                    echo "Changed files:"
+                    echo changes ?: "No changed files detected"
 
                     echo "Frontend changed: ${env.FRONTEND_CHANGED}"
                     echo "Backend changed: ${env.BACKEND_CHANGED}"
@@ -125,15 +165,20 @@ pipeline {
                     sh '''
                         set -e
 
+                        echo "Installing backend dependencies..."
                         npm ci
+
+                        echo "Running backend tests..."
                         npm test
+
+                        echo "Building backend..."
                         npm run build
                     '''
                 }
             }
         }
 
-        stage('Build Frontend') {
+        stage('Test & Build Frontend') {
             when {
                 expression {
                     params.ALWAYS_BUILD ||
@@ -146,7 +191,10 @@ pipeline {
                     sh '''
                         set -e
 
+                        echo "Installing frontend dependencies..."
                         npm ci
+
+                        echo "Building frontend..."
                         npm run build
                     '''
                 }
@@ -170,29 +218,49 @@ pipeline {
             steps {
                 script {
 
-                    if (params.ALWAYS_BUILD || env.FRONTEND_CHANGED == 'true') {
+                    if (
+                        params.ALWAYS_BUILD ||
+                        env.FRONTEND_CHANGED == 'true'
+                    ) {
                         sh '''
                             set -e
 
+                            echo "Docker version:"
                             docker --version
+
+                            echo "Building frontend Docker image..."
+                            echo "Image 1: $FRONTEND_IMAGE_TAG"
+                            echo "Image 2: $FRONTEND_COMMIT_IMAGE"
 
                             docker build \
                                 -t "$FRONTEND_IMAGE_TAG" \
-                                -t "${DOCKER_IMAGE_NAME_FRONTEND}:${GIT_COMMIT}" \
+                                -t "$FRONTEND_COMMIT_IMAGE" \
                                 ./frontend
+
+                            echo "Frontend Docker image built successfully."
                         '''
                     }
 
-                    if (params.ALWAYS_BUILD || env.BACKEND_CHANGED == 'true') {
+                    if (
+                        params.ALWAYS_BUILD ||
+                        env.BACKEND_CHANGED == 'true'
+                    ) {
                         sh '''
                             set -e
 
+                            echo "Docker version:"
                             docker --version
+
+                            echo "Building backend Docker image..."
+                            echo "Image 1: $BACKEND_IMAGE_TAG"
+                            echo "Image 2: $BACKEND_COMMIT_IMAGE"
 
                             docker build \
                                 -t "$BACKEND_IMAGE_TAG" \
-                                -t "${DOCKER_IMAGE_NAME_BACKEND}:${GIT_COMMIT}" \
+                                -t "$BACKEND_COMMIT_IMAGE" \
                                 ./backend
+
+                            echo "Backend Docker image built successfully."
                         '''
                     }
                 }
@@ -224,18 +292,32 @@ pipeline {
                     sh '''
                         set -e
 
+                        echo "Logging into Docker Hub..."
+
                         printf '%s' "$DOCKER_PASS" | docker login \
                             --username "$DOCKER_USER" \
                             --password-stdin
 
-                        if [ "$ALWAYS_BUILD" = "true" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
+                        if [ "$ALWAYS_BUILD" = "true" ] ||
+                        [ "$FRONTEND_CHANGED" = "true" ]; then
+
+                            echo "Pushing frontend image..."
+                            echo "$FRONTEND_IMAGE_TAG"
+                            echo "$FRONTEND_COMMIT_IMAGE"
+
                             docker push "$FRONTEND_IMAGE_TAG"
-                            docker push "${DOCKER_IMAGE_NAME_FRONTEND}:${GIT_COMMIT}"
+                            docker push "$FRONTEND_COMMIT_IMAGE"
                         fi
 
-                        if [ "$ALWAYS_BUILD" = "true" ] || [ "$BACKEND_CHANGED" = "true" ]; then
+                        if [ "$ALWAYS_BUILD" = "true" ] ||
+                        [ "$BACKEND_CHANGED" = "true" ]; then
+
+                            echo "Pushing backend image..."
+                            echo "$BACKEND_IMAGE_TAG"
+                            echo "$BACKEND_COMMIT_IMAGE"
+
                             docker push "$BACKEND_IMAGE_TAG"
-                            docker push "${DOCKER_IMAGE_NAME_BACKEND}:${GIT_COMMIT}"
+                            docker push "$BACKEND_COMMIT_IMAGE"
                         fi
 
                         docker logout
@@ -247,119 +329,189 @@ pipeline {
         stage('Deploy') {
             when {
                 expression {
-                    return params.ALWAYS_BUILD ||
+                    params.ALWAYS_BUILD ||
+                    (
+                        params.DEPLOY &&
+                        params.PUSH_DOCKER_IMAGE &&
+                        params.DEPLOY_SERVER_IP?.trim() &&
                         (
-                            params.DEPLOY &&
-                            params.PUSH_DOCKER_IMAGE &&
-                            params.DEPLOY_SERVER_IP?.trim() &&
-                            (
-                                env.FRONTEND_CHANGED == 'true' ||
-                                env.BACKEND_CHANGED == 'true' ||
-                                env.DEPLOY_CONFIG_CHANGED == 'true'
-                            )
+                            env.FRONTEND_CHANGED == 'true' ||
+                            env.BACKEND_CHANGED == 'true' ||
+                            env.DEPLOY_CONFIG_CHANGED == 'true'
                         )
+                    )
                 }
             }
 
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: "${DOCKER_CREDENTIALS_ID}",
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    ),
-                    sshUserPrivateKey(
-                        credentialsId: "${DEPLOY_SSH_CREDENTIALS_ID}",
-                        keyFileVariable: 'SSH_KEY',
-                        usernameVariable: 'SSH_USER'
-                    )
-                ]) {
-                    sh '''
-                        set -e
+                script {
 
-                        DEPLOY_HOST="$DEPLOY_SERVER_IP"
+                    if (!params.DEPLOY_SERVER_IP?.trim()) {
+                        error(
+                            'DEPLOY_SERVER_IP is required when deployment is enabled.'
+                        )
+                    }
 
-                        ssh -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "sudo mkdir -p '$DEPLOY_DIR' && \
-                            sudo chown '$SSH_USER':'$SSH_USER' '$DEPLOY_DIR'"
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: "${DOCKER_CREDENTIALS_ID}",
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        ),
 
-                        scp -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            docker-compose.yml \
-                            "$SSH_USER@$DEPLOY_HOST:/tmp/docker-compose.yml"
+                        sshUserPrivateKey(
+                            credentialsId: "${DEPLOY_SSH_CREDENTIALS_ID}",
+                            keyFileVariable: 'SSH_KEY',
+                            usernameVariable: 'SSH_USER'
+                        )
+                    ]) {
 
-                        ssh -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "sudo mv /tmp/docker-compose.yml '$DEPLOY_DIR/docker-compose.yml' && \
-                            sudo chown '$SSH_USER':'$SSH_USER' '$DEPLOY_DIR/docker-compose.yml'"
+                        sh '''
+                            set -e
 
-                        ssh -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "touch '$DEPLOY_DIR/.env' && \
-                            chmod 600 '$DEPLOY_DIR/.env'"
+                            DEPLOY_HOST="$DEPLOY_SERVER_IP"
 
-                        if [ "$ALWAYS_BUILD" = "true" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
-                            ssh -i "$SSH_KEY" \
+                            echo "Deploying to: $DEPLOY_HOST"
+                            echo "Deploy directory: $DEPLOY_DIR"
+
+                            echo "Creating deployment directory..."
+
+                            ssh \
+                                -i "$SSH_KEY" \
                                 -o StrictHostKeyChecking=no \
                                 "$SSH_USER@$DEPLOY_HOST" \
-                                "grep -v '^FRONTEND_IMAGE_TAG=' '$DEPLOY_DIR/.env' > '$DEPLOY_DIR/.env.tmp' || true; \
-                                echo 'FRONTEND_IMAGE_TAG=$FRONTEND_IMAGE_TAG' >> '$DEPLOY_DIR/.env.tmp'; \
-                                mv '$DEPLOY_DIR/.env.tmp' '$DEPLOY_DIR/.env'; \
-                                chmod 600 '$DEPLOY_DIR/.env'"
-                        fi
+                                "sudo mkdir -p '$DEPLOY_DIR' && \
+                                sudo chown '$SSH_USER':'$SSH_USER' '$DEPLOY_DIR'"
 
-                        if [ "$ALWAYS_BUILD" = "true" ] || [ "$BACKEND_CHANGED" = "true" ]; then
-                            ssh -i "$SSH_KEY" \
+                            echo "Uploading docker-compose.yml..."
+
+                            scp \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                docker-compose.yml \
+                                "$SSH_USER@$DEPLOY_HOST:/tmp/docker-compose.yml"
+
+                            ssh \
+                                -i "$SSH_KEY" \
                                 -o StrictHostKeyChecking=no \
                                 "$SSH_USER@$DEPLOY_HOST" \
-                                "grep -v '^BACKEND_IMAGE_TAG=' '$DEPLOY_DIR/.env' > '$DEPLOY_DIR/.env.tmp' || true; \
-                                echo 'BACKEND_IMAGE_TAG=$BACKEND_IMAGE_TAG' >> '$DEPLOY_DIR/.env.tmp'; \
-                                mv '$DEPLOY_DIR/.env.tmp' '$DEPLOY_DIR/.env'; \
+                                "sudo mv /tmp/docker-compose.yml '$DEPLOY_DIR/docker-compose.yml' && \
+                                sudo chown '$SSH_USER':'$SSH_USER' '$DEPLOY_DIR/docker-compose.yml'"
+
+                            echo "Preparing .env..."
+
+                            ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "touch '$DEPLOY_DIR/.env' && \
                                 chmod 600 '$DEPLOY_DIR/.env'"
-                        fi
 
-                        printf '%s' "$DOCKER_PASS" | ssh \
-                            -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "docker login \
-                                --username '$DOCKER_USER' \
-                                --password-stdin"
+                            if [ "$ALWAYS_BUILD" = "true" ] ||
+                            [ "$FRONTEND_CHANGED" = "true" ]; then
 
-                        ssh -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "cd '$DEPLOY_DIR' && \
-                            docker compose pull && \
-                            docker compose up -d && \
-                            docker compose ps"
+                                echo "Updating frontend image tag..."
 
-                        ssh -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "set -e; \
-                            for i in \$(seq 1 30); do \
-                                if curl --fail --silent --show-error --max-time 5 http://localhost/health >/dev/null; then \
-                                    exit 0; \
-                                fi; \
-                                sleep 2; \
-                            done; \
-                            exit 1"
+                                ssh \
+                                    -i "$SSH_KEY" \
+                                    -o StrictHostKeyChecking=no \
+                                    "$SSH_USER@$DEPLOY_HOST" \
+                                    "grep -v '^FRONTEND_IMAGE_TAG=' '$DEPLOY_DIR/.env' > '$DEPLOY_DIR/.env.tmp' || true; \
+                                    echo 'FRONTEND_IMAGE_TAG=$FRONTEND_IMAGE_TAG' >> '$DEPLOY_DIR/.env.tmp'; \
+                                    mv '$DEPLOY_DIR/.env.tmp' '$DEPLOY_DIR/.env'; \
+                                    chmod 600 '$DEPLOY_DIR/.env'"
+                            fi
 
-                        ssh -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "docker logout || true"
+                            if [ "$ALWAYS_BUILD" = "true" ] ||
+                            [ "$BACKEND_CHANGED" = "true" ]; then
 
-                        ssh -i "$SSH_KEY" \
-                            -o StrictHostKeyChecking=no \
-                            "$SSH_USER@$DEPLOY_HOST" \
-                            "docker image prune -f"
-                    '''
+                                echo "Updating backend image tag..."
+
+                                ssh \
+                                    -i "$SSH_KEY" \
+                                    -o StrictHostKeyChecking=no \
+                                    "$SSH_USER@$DEPLOY_HOST" \
+                                    "grep -v '^BACKEND_IMAGE_TAG=' '$DEPLOY_DIR/.env' > '$DEPLOY_DIR/.env.tmp' || true; \
+                                    echo 'BACKEND_IMAGE_TAG=$BACKEND_IMAGE_TAG' >> '$DEPLOY_DIR/.env.tmp'; \
+                                    mv '$DEPLOY_DIR/.env.tmp' '$DEPLOY_DIR/.env'; \
+                                    chmod 600 '$DEPLOY_DIR/.env'"
+                            fi
+
+                            echo "Logging into Docker Hub on deployment server..."
+
+                            printf '%s' "$DOCKER_PASS" | ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "docker login \
+                                    --username '$DOCKER_USER' \
+                                    --password-stdin"
+
+                            echo "Pulling Docker images..."
+
+                            ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "cd '$DEPLOY_DIR' && \
+                                docker compose pull"
+
+                            echo "Starting containers..."
+
+                            ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "cd '$DEPLOY_DIR' && \
+                                docker compose up -d"
+
+                            echo "Container status:"
+
+                            ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "cd '$DEPLOY_DIR' && \
+                                docker compose ps"
+
+                            echo "Waiting for application health..."
+
+                            ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "set -e; \
+                                for i in \$(seq 1 30); do \
+                                    if curl --fail --silent --show-error --max-time 5 \
+                                        http://localhost/health >/dev/null; then \
+                                        echo 'Application is healthy.'; \
+                                        exit 0; \
+                                    fi; \
+                                    echo \"Health check attempt \$i failed...\"; \
+                                    sleep 2; \
+                                done; \
+                                echo 'Application health check failed.'; \
+                                exit 1"
+
+                            echo "Logging out from Docker Hub..."
+
+                            ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "docker logout || true"
+
+                            echo "Removing unused Docker images..."
+
+                            ssh \
+                                -i "$SSH_KEY" \
+                                -o StrictHostKeyChecking=no \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "docker image prune -f"
+
+                            echo "Deployment completed successfully."
+                        '''
+                    }
                 }
             }
         }
@@ -378,4 +530,5 @@ pipeline {
             cleanWs()
         }
     }
+
 }
