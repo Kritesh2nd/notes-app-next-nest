@@ -8,13 +8,13 @@ pipeline {
     parameters {
         booleanParam(
             name: 'PUSH_DOCKER_IMAGE',
-            defaultValue: false,
+            defaultValue: true,
             description: 'Build and push changed Docker images'
         )
 
         booleanParam(
             name: 'DEPLOY',
-            defaultValue: false,
+            defaultValue: true,
             description: 'Deploy changed applications'
         )
 
@@ -92,7 +92,7 @@ pipeline {
                     } ? 'true' : 'false'
 
                     env.DEPLOY_CONFIG_CHANGED = changedFiles.any {
-                        it == 'docker-compose.prod.yml'
+                        it == 'docker-compose.yml'
                     } ? 'true' : 'false'
 
                     echo "Frontend changed: ${env.FRONTEND_CHANGED}"
@@ -250,7 +250,7 @@ pipeline {
 
                         scp -i "$SSH_KEY" \
                             -o StrictHostKeyChecking=no \
-                            docker-compose.prod.yml \
+                            docker-compose.yml \
                             "$SSH_USER@$DEPLOY_HOST:/tmp/docker-compose.yml"
 
                         ssh -i "$SSH_KEY" \
